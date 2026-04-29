@@ -1,4 +1,5 @@
 /out/
+/projet-etude-app-demo
 *.exe
 *.test
 coverage.out
