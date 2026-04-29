@@ -23,8 +23,8 @@ jobs:
           go-version: "1.25"
           cache: true
       - run: go vet ./...
-      - name: Test + coverage
-        run: go test -race -count=1 -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Test + coverage (uses Docker via testcontainers for Postgres)
+        run: go test -race -count=1 -timeout=300s -coverprofile=coverage.out -covermode=atomic ./...
       - name: Coverage summary
         run: |
           go tool cover -func=coverage.out | tee coverage.txt

@@ -1,0 +1,59 @@
+{{ define "index" }}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Tracker d'incidents — projet-etude</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://unpkg.com/htmx.org@1.9.12" integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2" crossorigin="anonymous"></script>
+  <style>
+    :root { color-scheme: light dark; --gap: .75rem; }
+    body { font-family: system-ui, sans-serif; max-width: 56rem; margin: 2rem auto; padding: 0 1rem; }
+    h1 { margin-bottom: .25rem; }
+    .sub { color: gray; margin-bottom: 1.5rem; }
+    form.create { display: grid; grid-template-columns: 1fr 1fr 9rem auto; gap: var(--gap); margin-bottom: 1.5rem; }
+    form.create input, form.create select, form.create button { padding: .5rem; font: inherit; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid #8884; vertical-align: top; }
+    th { font-size: .85rem; text-transform: uppercase; letter-spacing: .04em; color: gray; }
+    .pri-low    { color: #2a7; }
+    .pri-medium { color: #c93; }
+    .pri-high   { color: #d44; font-weight: 600; }
+    .status-open   { color: #c93; }
+    .status-closed { color: gray; text-decoration: line-through; }
+    button.close { background: transparent; border: 1px solid #8888; padding: .25rem .6rem; cursor: pointer; }
+    .stats { display: flex; gap: 2rem; margin-bottom: 1rem; }
+    .stats div { background: #8881; padding: .6rem .9rem; border-radius: .4rem; }
+  </style>
+</head>
+<body>
+  <h1>Tracker d'incidents</h1>
+  <div class="sub">Demo projet-etude — {{ .Hostname }}</div>
+
+  <div class="stats">
+    <div><strong>{{ .OpenCount }}</strong> ouvert(s)</div>
+    <div>Total affichés : <strong>{{ len .Tickets }}</strong></div>
+  </div>
+
+  <form class="create" hx-post="/api/tickets" hx-target="#tickets tbody" hx-swap="afterbegin" hx-on::after-request="if(event.detail.successful) this.reset()">
+    <input name="title" placeholder="Titre de l'incident" required maxlength="200">
+    <input name="description" placeholder="Description (optionnel)">
+    <select name="priority">
+      <option value="low">Faible</option>
+      <option value="medium" selected>Moyenne</option>
+      <option value="high">Haute</option>
+    </select>
+    <button type="submit">Créer</button>
+  </form>
+
+  <table id="tickets">
+    <thead>
+      <tr>
+        <th>#</th><th>Titre</th><th>Priorité</th><th>Statut</th><th>Créé</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{ range .Tickets }}{{ template "ticket-row" . }}{{ end }}
+    </tbody>
+  </table>
+</body>
+</html>{{ end }}

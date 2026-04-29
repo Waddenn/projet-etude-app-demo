@@ -1,0 +1,15 @@
+{{ define "ticket-row" }}<tr id="ticket-{{ .ID }}" class="status-{{ .Status }}">
+  <td>{{ .ID }}</td>
+  <td>{{ .Title }}{{ if .Description }}<br><small>{{ .Description }}</small>{{ end }}</td>
+  <td class="pri-{{ .Priority }}">{{ .Priority }}</td>
+  <td>{{ .Status }}</td>
+  <td><small>{{ formatTime "2006-01-02 15:04" .CreatedAt }}</small></td>
+  <td>
+    {{ if eq (printf "%s" .Status) "open" }}
+      <button class="close"
+              hx-post="/api/tickets/{{ .ID }}/close"
+              hx-target="#ticket-{{ .ID }}"
+              hx-swap="outerHTML">Fermer</button>
+    {{ end }}
+  </td>
+</tr>{{ end }}
