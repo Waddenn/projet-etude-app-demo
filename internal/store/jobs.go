@@ -63,11 +63,11 @@ func (s *Store) CompleteJob(ctx context.Context, id int64) error {
 	return err
 }
 
-// FailJob enregistre l'échec. Si attempts < max_attempts, le job repart
+// FailJob enregistre l'échec. Si attempts < maxAttempts, le job repart
 // en 'pending' avec un backoff exponentiel ; sinon il passe en 'failed'.
-func (s *Store) FailJob(ctx context.Context, id int64, attempts, max int, reason string) error {
+func (s *Store) FailJob(ctx context.Context, id int64, attempts, maxAttempts int, reason string) error {
 	defer s.timed(ctx, "fail_job", time.Now())
-	if attempts < max {
+	if attempts < maxAttempts {
 		backoff := time.Duration(1<<attempts) * time.Second
 		if backoff > 5*time.Minute {
 			backoff = 5 * time.Minute

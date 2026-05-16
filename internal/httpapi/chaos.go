@@ -34,7 +34,7 @@ func slowHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "client gone", 499)
 		return
 	}
-	fmt.Fprintf(w, "slept %dms\n", ms)
+	_, _ = fmt.Fprintf(w, "slept %dms\n", ms) //nolint:gosec // ms validé et borné, pas d'XSS
 }
 
 // flakyHandler renvoie 500 avec une probabilité `rate` (0.0–1.0).
@@ -88,7 +88,7 @@ func memleakHandler(w http.ResponseWriter, r *http.Request) {
 		total += len(b)
 	}
 	memHoldMu.Unlock()
-	fmt.Fprintf(w, "leaked %d MiB (total held %d MiB)\n", mb, total/1024/1024)
+	_, _ = fmt.Fprintf(w, "leaked %d MiB (total held %d MiB)\n", mb, total/1024/1024) //nolint:gosec // entiers bornés
 }
 
 func memleakResetHandler(w http.ResponseWriter, _ *http.Request) {

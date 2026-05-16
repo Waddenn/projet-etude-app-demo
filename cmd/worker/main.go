@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -20,7 +21,13 @@ import (
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	if err := run(); err != nil {
+		slog.Error("worker fatal", "err", err)
+		os.Exit(1)
+	}
+}
 
+func run() error {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		dsn = "postgres://app:app@localhost:5432/app?sslmode=disable"
@@ -35,8 +42,7 @@ func main() {
 
 	shutdownTracer, err := otelinit.Setup(ctx, otelinit.Config{ServiceName: "projet-etude-app-demo-worker"})
 	if err != nil {
-		slog.Error("otel setup", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("otel setup: %w", err)
 	}
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -46,16 +52,14 @@ func main() {
 
 	pool, err := dbutil.Open(ctx, dsn)
 	if err != nil {
-		slog.Error("db connect", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("db connect: %w", err)
 	}
 	defer pool.Close()
 
 	// Migrations idempotentes : un worker isolé doit aussi pouvoir démarrer le schéma
 	// (utile pour les tests / déploiement où l'api n'a pas encore tourné).
 	if err := store.Migrate(ctx, pool); err != nil {
-		slog.Error("migrate", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("migrate: %w", err)
 	}
 
 	st := store.New(pool)
@@ -81,20 +85,23 @@ func main() {
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
+
+	serverErr := make(chan error, 1)
 	go func() {
 		slog.Info("worker metrics listening", "addr", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			slog.Error("metrics server error", "err", err)
-			os.Exit(1)
+			serverErr <- err
 		}
 	}()
 
-	errCh := make(chan error, 1)
-	go func() { errCh <- w.Run(ctx) }()
+	workerErr := make(chan error, 1)
+	go func() { workerErr <- w.Run(ctx) }()
 
 	select {
 	case <-ctx.Done():
-	case err := <-errCh:
+	case err := <-serverErr:
+		return fmt.Errorf("metrics server: %w", err)
+	case err := <-workerErr:
 		if err != nil {
 			slog.Error("worker stopped", "err", err)
 		}
@@ -104,4 +111,5 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shutdownCtx)
+	return nil
 }

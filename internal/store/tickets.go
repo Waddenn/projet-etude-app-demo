@@ -51,7 +51,7 @@ func (s *Store) CreateTicketAndEnqueue(ctx context.Context, title, description s
 	if err != nil {
 		return nil, false, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	var t model.Ticket
 	if err := tx.QueryRow(ctx, `
@@ -152,4 +152,3 @@ func (s *Store) CountOpenTickets(ctx context.Context) (int64, error) {
 	err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM tickets WHERE status = 'open'`).Scan(&n)
 	return n, err
 }
-
