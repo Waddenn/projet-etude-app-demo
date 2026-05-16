@@ -1,0 +1,77 @@
+# golangci-lint v2 config.
+# https://golangci-lint.run/usage/configuration/
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    # Default-actifs en mode "all":
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    # Sécurité / robustesse :
+    - gosec        # security scanner
+    - bodyclose    # net/http : Body fermé partout
+    - errorlint    # err comparison via errors.Is/As
+    - nilerr       # `return nil` après check err
+    - contextcheck # bonne propagation de context.Context
+    - exhaustive   # switch exhaustif sur enums
+    # Code style :
+    # misspell retiré : les commentaires sont en français, beaucoup de faux positifs.
+    - revive       # remplace golint
+    - gocritic     # heuristiques diverses
+    - prealloc
+    # Bonnes pratiques tests :
+    - thelper      # t.Helper() dans les helpers de test
+    - tparallel    # t.Parallel() correctement utilisé
+  settings:
+    revive:
+      # On retire la règle "exported": le code applicatif a beaucoup de
+      # symboles exportés pour faciliter les tests d'intégration ; la doc
+      # GoDoc systématique ajoute du bruit sans valeur ici.
+      enable-all-rules: false
+      rules:
+        - name: var-naming
+        - name: blank-imports
+        - name: context-as-argument
+        - name: error-return
+        - name: increment-decrement
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: redefines-builtin-id
+    gocritic:
+      disabled-checks:
+        - ifElseChain
+    gosec:
+      excludes:
+        - G104  # déjà couvert par errcheck
+        - G101  # default DSN avec app:app — placeholder dev local
+        - G124  # cookies : on gère Secure conditionnellement (HTTP en lab)
+  exclusions:
+    rules:
+      # Les tests peuvent panic/skip plus librement.
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+      # Helpers de tests OIDC : on lit dans /dev/urandom, ok.
+      - path: internal/auth/auth_test\.go
+        linters:
+          - gosec
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/Waddenn/projet-etude-app-demo

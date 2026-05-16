@@ -170,7 +170,7 @@ func instrument(path string, h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		sr := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-		defer func() {
+		defer func() { //nolint:contextcheck // metrics emission, le ctx ne sert qu'au trace_id exemplar
 			if rec := recover(); rec != nil {
 				slog.Error("panic recovered", "panic", rec, "path", path)
 				if sr.status == http.StatusOK {

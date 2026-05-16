@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"strconv"
@@ -15,11 +16,16 @@ import (
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	if err := run(); err != nil {
+		slog.Error("audit-purge failed", "err", err)
+		os.Exit(1)
+	}
+}
 
+func run() error {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		slog.Error("DATABASE_URL is required")
-		os.Exit(1)
+		return errors.New("DATABASE_URL is required")
 	}
 	days := 90
 	if v := os.Getenv("AUDIT_RETENTION_DAYS"); v != "" {
@@ -33,16 +39,15 @@ func main() {
 
 	pool, err := dbutil.Open(ctx, dsn)
 	if err != nil {
-		slog.Error("db connect", "err", err)
-		os.Exit(1)
+		return err
 	}
 	defer pool.Close()
 
 	st := store.New(pool)
 	n, err := st.PurgeAuditOlderThan(ctx, time.Duration(days)*24*time.Hour)
 	if err != nil {
-		slog.Error("purge", "err", err)
-		os.Exit(1)
+		return err
 	}
 	slog.Info("audit purge done", "retention_days", days, "rows_deleted", n)
+	return nil
 }
