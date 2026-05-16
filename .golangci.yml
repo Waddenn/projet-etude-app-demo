@@ -54,7 +54,6 @@ linters:
       excludes:
         - G104  # déjà couvert par errcheck
         - G101  # default DSN avec app:app — placeholder dev local
-        - G124  # cookies : on gère Secure conditionnellement (HTTP en lab)
   exclusions:
     rules:
       # Les tests peuvent panic/skip plus librement.
