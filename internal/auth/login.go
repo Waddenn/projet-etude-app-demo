@@ -49,7 +49,9 @@ func (l *Login) StartHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state := randomState()
-	http.SetCookie(w, &http.Cookie{
+	// Cookie state OIDC : Secure conditionnel pour rester utilisable
+	// derrière port-forward HTTP en lab. En prod, Tailscale-serve = HTTPS.
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // Secure géré dynamiquement
 		Name:     stateCookie,
 		Value:    state,
 		Path:     "/",
@@ -72,7 +74,7 @@ func (l *Login) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Cookie state consommé.
-	http.SetCookie(w, &http.Cookie{Name: stateCookie, Path: "/", MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: stateCookie, Path: "/", MaxAge: -1}) //nolint:gosec // suppression cookie
 
 	token, err := l.oauth.Exchange(r.Context(), r.URL.Query().Get("code"))
 	if err != nil {
@@ -90,7 +92,7 @@ func (l *Login) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sealed := sealCookie(l.cfg.SessionKey, rawIDToken)
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // Secure géré dynamiquement
 		Name:     sessionCookieName,
 		Value:    sealed,
 		Path:     "/",
@@ -103,7 +105,7 @@ func (l *Login) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (l *Login) LogoutHandler(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Path: "/", MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Path: "/", MaxAge: -1}) //nolint:gosec // suppression cookie
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
