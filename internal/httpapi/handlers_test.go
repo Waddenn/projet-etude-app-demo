@@ -1,4 +1,4 @@
-package main
+package httpapi
 
 import (
 	"context"
@@ -10,65 +10,25 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/testcontainers/testcontainers-go"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
+	"github.com/Waddenn/projet-etude-app-demo/internal/auth"
+	"github.com/Waddenn/projet-etude-app-demo/internal/model"
+	"github.com/Waddenn/projet-etude-app-demo/internal/store"
+	"github.com/Waddenn/projet-etude-app-demo/internal/testutil"
 )
 
-func setupTestServer(t *testing.T) (http.Handler, *Store, func()) {
+func setup(t *testing.T) (http.Handler, *store.Store) {
 	t.Helper()
-	ctx := context.Background()
-
-	pgC, err := tcpostgres.Run(ctx,
-		"postgres:16-alpine",
-		tcpostgres.WithDatabase("app"),
-		tcpostgres.WithUsername("app"),
-		tcpostgres.WithPassword("app"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(60*time.Second),
-		),
-	)
-	if err != nil {
-		t.Fatalf("postgres container: %v", err)
-	}
-
-	dsn, err := pgC.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("dsn: %v", err)
-	}
-
-	cfg, err := pgxpool.ParseConfig(dsn)
-	if err != nil {
-		t.Fatalf("parse cfg: %v", err)
-	}
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
-	if err != nil {
-		t.Fatalf("pool: %v", err)
-	}
-
-	if err := migrate(ctx, pool); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-
-	store := &Store{pool: pool}
-	mux := newMux(store)
-
-	cleanup := func() {
-		pool.Close()
-		_ = pgC.Terminate(context.Background())
-	}
-	return mux, store, cleanup
+	pool := testutil.NewPostgres(t)
+	st := store.New(pool)
+	// Auth désactivée → middleware injecte dev/operator pour tous les tests
+	// hérités. Les tests d'auth dédiés instancient un Authenticator explicite.
+	a, _ := auth.New(context.Background(), auth.Config{})
+	return NewMux(st, a, nil), st
 }
 
 func TestHealthz(t *testing.T) {
-	mux, _, cleanup := setupTestServer(t)
-	defer cleanup()
-
+	mux, _ := setup(t)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	if rec.Code != http.StatusOK {
@@ -77,9 +37,7 @@ func TestHealthz(t *testing.T) {
 }
 
 func TestReadyz(t *testing.T) {
-	mux, _, cleanup := setupTestServer(t)
-	defer cleanup()
-
+	mux, _ := setup(t)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	if rec.Code != http.StatusOK {
@@ -88,8 +46,7 @@ func TestReadyz(t *testing.T) {
 }
 
 func TestCreateAndListTicket_JSON(t *testing.T) {
-	mux, _, cleanup := setupTestServer(t)
-	defer cleanup()
+	mux, _ := setup(t)
 
 	body := strings.NewReader(`{"title":"prod down","description":"500s on /api","priority":"high"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/tickets", body)
@@ -99,17 +56,17 @@ func TestCreateAndListTicket_JSON(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	var created Ticket
+	var created model.Ticket
 	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if created.Title != "prod down" || created.Priority != PriorityHigh || created.Status != StatusOpen {
+	if created.Title != "prod down" || created.Priority != model.PriorityHigh || created.Status != model.StatusOpen {
 		t.Fatalf("unexpected ticket: %+v", created)
 	}
 
 	rec = httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/tickets", nil))
-	var tickets []Ticket
+	var tickets []model.Ticket
 	if err := json.Unmarshal(rec.Body.Bytes(), &tickets); err != nil {
 		t.Fatalf("decode list: %v", err)
 	}
@@ -119,8 +76,7 @@ func TestCreateAndListTicket_JSON(t *testing.T) {
 }
 
 func TestCreateTicket_HTMXReturnsRow(t *testing.T) {
-	mux, _, cleanup := setupTestServer(t)
-	defer cleanup()
+	mux, _ := setup(t)
 
 	form := url.Values{}
 	form.Set("title", "imprimante HS")
@@ -143,11 +99,10 @@ func TestCreateTicket_HTMXReturnsRow(t *testing.T) {
 }
 
 func TestCloseTicket(t *testing.T) {
-	mux, store, cleanup := setupTestServer(t)
-	defer cleanup()
+	mux, st := setup(t)
 
 	ctx := context.Background()
-	ticket, err := store.Create(ctx, "to close", "", PriorityMedium)
+	ticket, err := st.CreateTicket(ctx, "to close", "", model.PriorityMedium)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -159,18 +114,17 @@ func TestCloseTicket(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	var got Ticket
+	var got model.Ticket
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if got.Status != StatusClosed {
+	if got.Status != model.StatusClosed {
 		t.Fatalf("status = %s", got.Status)
 	}
 }
 
 func TestCreateTicket_ValidationRejected(t *testing.T) {
-	mux, _, cleanup := setupTestServer(t)
-	defer cleanup()
+	mux, _ := setup(t)
 
 	cases := []struct {
 		name string
@@ -194,8 +148,7 @@ func TestCreateTicket_ValidationRejected(t *testing.T) {
 }
 
 func TestMetricsExposed(t *testing.T) {
-	mux, _, cleanup := setupTestServer(t)
-	defer cleanup()
+	mux, _ := setup(t)
 
 	body := `{"title":"obs","priority":"high"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/tickets", strings.NewReader(body))
@@ -210,6 +163,7 @@ func TestMetricsExposed(t *testing.T) {
 		`tickets_open`,
 		`db_query_duration_seconds`,
 		`http_requests_total`,
+		`jobs_enqueued_total`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("metrics missing %q", want)
@@ -217,3 +171,38 @@ func TestMetricsExposed(t *testing.T) {
 	}
 }
 
+// TestCreateHighPriority_Enqueues vérifie que la priorité 'high' enfile bien
+// un job webhook.notify dans la même transaction.
+func TestCreateHighPriority_Enqueues(t *testing.T) {
+	mux, st := setup(t)
+
+	body := `{"title":"server on fire","priority":"high"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/tickets", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(httptest.NewRecorder(), req)
+
+	n, err := st.QueueDepth(context.Background())
+	if err != nil {
+		t.Fatalf("queue depth: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 pending job, got %d", n)
+	}
+}
+
+func TestCreateLowPriority_DoesNotEnqueue(t *testing.T) {
+	mux, st := setup(t)
+
+	body := `{"title":"typo","priority":"low"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/tickets", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(httptest.NewRecorder(), req)
+
+	n, err := st.QueueDepth(context.Background())
+	if err != nil {
+		t.Fatalf("queue depth: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("expected 0 pending jobs, got %d", n)
+	}
+}
