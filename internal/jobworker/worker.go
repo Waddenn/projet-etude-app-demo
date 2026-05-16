@@ -59,9 +59,9 @@ func (w *Worker) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("acquire listen conn: %w", err)
 	}
-	defer conn.Release()
 
 	if _, err := conn.Exec(ctx, "LISTEN jobs"); err != nil {
+		conn.Release()
 		return fmt.Errorf("LISTEN: %w", err)
 	}
 	slog.Info("worker started", "id", w.ID)
@@ -76,7 +76,18 @@ func (w *Worker) Run(ctx context.Context) error {
 	defer depthTicker.Stop()
 
 	notifCh := make(chan struct{}, 1)
-	go w.listenLoop(ctx, conn.Conn(), notifCh)
+	listenerDone := make(chan struct{})
+	go func() {
+		defer close(listenerDone)
+		w.listenLoop(ctx, conn.Conn(), notifCh)
+	}()
+
+	// Release seulement après que listenLoop a terminé : sinon la
+	// fermeture de la conn racerait avec WaitForNotification (cf. CI -race).
+	defer func() {
+		<-listenerDone
+		conn.Release()
+	}()
 
 	for {
 		select {
